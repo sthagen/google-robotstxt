@@ -44,8 +44,8 @@ namespace googlebot {
 // ParseRobotsTxt() in the sequence they have been found in the file.
 class RobotsParseHandler {
  public:
-  RobotsParseHandler() {}
-  virtual ~RobotsParseHandler() {}
+  RobotsParseHandler() = default;
+  virtual ~RobotsParseHandler() = default;
 
   // Disallow copying and assignment.
   RobotsParseHandler(const RobotsParseHandler&) = delete;
@@ -153,8 +153,8 @@ class RobotsMatcher : protected RobotsParseHandler {
   // the specified user agents.
   bool disallow_ignore_global() const;
 
-  // Returns true iff, when AllowedByRobots() was called, the robots file
-  // referred explicitly to one of the specified user agents.
+  // Returns true if and only if, when AllowedByRobots() was called, the robots
+  // file referred explicitly to one of the specified user agents.
   bool ever_seen_specific_agent() const;
 
   // Returns the line that matched or 0 if none matched.

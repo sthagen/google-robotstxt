@@ -58,7 +58,7 @@ namespace googlebot {
 //    Match.
 class RobotsMatchStrategy {
  public:
-  virtual ~RobotsMatchStrategy() {}
+  virtual ~RobotsMatchStrategy() = default;
 
   virtual int MatchAllow(absl::string_view path,
                          absl::string_view pattern) = 0;
@@ -124,8 +124,6 @@ static const char* kHexDigits = "0123456789ABCDEF";
 // authority, and fragment. Result always starts with "/".
 // Returns "/" if the url doesn't have a path or is not valid.
 std::string GetPathParamsQuery(const std::string& url) {
-  std::string path;
-
   // Initial two slashes are ignored.
   size_t search_start = 0;
   if (url.size() >= 2 && url[0] == '/' && url[1] == '/') search_start = 2;
@@ -304,7 +302,7 @@ class RobotsTxtParser {
 
   void ParseAndEmitLine(int current_line, char* line,
                         bool* line_too_long_strict);
-  bool NeedEscapeValueForKey(const Key& key);
+  static bool NeedEscapeValueForKey(const Key& key);
 
   absl::string_view robots_body_;
   RobotsParseHandler* const handler_;
@@ -369,14 +367,14 @@ void RobotsTxtParser::GetKeyAndValueFrom(
     }
   }
   if (nullptr == sep) {
-    return;                     // Couldn't find a separator.
+    return;  // Couldn't find a separator.
   }
 
   *key = line;                        // Key starts at beginning of line.
   *sep = '\0';                        // And stops at the separator.
   StripWhitespaceSlowly(key);         // Get rid of any trailing whitespace.
 
-  if (strlen(*key) > 0) {
+  if ((*key)[0] != '\0') {
     *value = 1 + sep;                 // Value starts after the separator.
     StripWhitespaceSlowly(value);     // Get rid of any leading whitespace.
     metadata->has_directive = true;
@@ -476,7 +474,7 @@ void RobotsTxtParser::Parse() {
 // characters matched by a pattern is returned as its match priority.
 class LongestMatchRobotsMatchStrategy : public RobotsMatchStrategy {
  public:
-  LongestMatchRobotsMatchStrategy() { }
+  LongestMatchRobotsMatchStrategy() = default;
 
   // Disallow copying and assignment.
   LongestMatchRobotsMatchStrategy(const LongestMatchRobotsMatchStrategy&) =
