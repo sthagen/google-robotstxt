@@ -12,11 +12,16 @@ namespace googlebot {
 // doesn't use them for anything. Other search engines may, however, so we
 // parse them out so users of the library can highlight them for their own
 // users if they so wish.
+// We are using the HTTP Archive custom_metrics.robots_txt dataset to identify
+// the top 10 tags and append new tags to this list.
+// https://github.com/HTTPArchive/custom-metrics
 // These are different from the "unknown" tags, since we know that these may
 // have some use cases; to the best of our knowledge other tags we find, don't.
 // (for example, "unicorn" from "unicorn: /value")
 static const std::vector<std::string> kUnsupportedTags = {
-    "clean-param", "crawl-delay", "host", "noarchive", "noindex", "nofollow"};
+    "clean-param", "content-signal", "content-usage", "crawl-delay",
+    "domain",      "host",           "noarchive",     "nofollow",
+    "noindex",     "request-rate",   "revisit-after", "visit-time"};
 
 void RobotsParsingReporter::Digest(int line_num,
                                    RobotsParsedLine::RobotsTagName parsed_tag) {
