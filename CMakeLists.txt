@@ -15,8 +15,8 @@ LIST(GET VERSION_DIGITS 2 CPACK_PACKAGE_VERSION_PATCH)
 SET(CPACK_PACKAGE_NAME "robots")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Google's robots.txt parser and matcher C++ library")
 SET(CPACK_PACKAGE_VENDOR "Google Inc.")
-SET(CPACK_PACAKGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/README.md")
-SET(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+SET(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+SET(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 
 SET(CPACK_PACKAGE_INSTALL_DIRECTORY "${CPACK_PACKAGE_DESCRIPTION_SUMMARY} ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
 SET(CPACK_SOURCE_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
@@ -51,6 +51,7 @@ SET(CPACK_SOURCE_IGNORE_FILES
 OPTION(ROBOTS_BUILD_STATIC "If ON, robots will build also the static library" ON)
 OPTION(ROBOTS_BUILD_TESTS "If ON, robots will build test targets" OFF)
 OPTION(ROBOTS_INSTALL "If ON, enable the installation of the targets" ON)
+OPTION(ROBOTS_SKIP_DEPS "If ON, skip build dependency installation" OFF)
 
 ############ helper libs ############
 
@@ -60,17 +61,19 @@ INCLUDE(ExternalProject)
 
 ############ dependencies ##############
 
-CONFIGURE_FILE(CMakeLists.txt.in libs/CMakeLists.txt)
-EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
+IF(NOT ROBOTS_SKIP_DEPS)
+    CONFIGURE_FILE(CMakeLists.txt.in libs/CMakeLists.txt)
+    EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
 
-IF(result)
-    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
-ENDIF()
+    IF(result)
+        MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
+    ENDIF()
 
-EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} --build . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
+    EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} --build . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
 
-IF(result)
-    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
+    IF(result)
+        MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
+    ENDIF()
 ENDIF()
 
 # abseil-cpp
@@ -84,23 +87,27 @@ IF(MSVC)
     ADD_DEFINITIONS(/DNOMINMAX /DWIN32_LEAN_AND_MEAN=1 /D_CRT_SECURE_NO_WARNINGS)
 ENDIF(MSVC)
 
-ADD_SUBDIRECTORY(${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-src
-                 ${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-build
-                 EXCLUDE_FROM_ALL)
+IF(NOT ROBOTS_SKIP_DEPS)
+    ADD_SUBDIRECTORY(${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-src
+                     ${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-build
+                     EXCLUDE_FROM_ALL)
+ENDIF()
 
 IF(ROBOTS_BUILD_TESTS)
     INCLUDE(CTest)
 
-    # googletest
-    ADD_SUBDIRECTORY(${CMAKE_CURRENT_BINARY_DIR}/libs/gtest-src
-                     ${CMAKE_CURRENT_BINARY_DIR}/libs/gtest-build
-                     EXCLUDE_FROM_ALL)
+    IF(NOT ROBOTS_SKIP_DEPS)
+        # googletest
+        ADD_SUBDIRECTORY(${CMAKE_CURRENT_BINARY_DIR}/libs/gtest-src
+                         ${CMAKE_CURRENT_BINARY_DIR}/libs/gtest-build
+                         EXCLUDE_FROM_ALL)
 
-    SET(INSTALL_GTEST 0)
-    SET(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        SET(INSTALL_GTEST 0)
+        SET(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-    IF(CMAKE_VERSION VERSION_LESS 2.8.11)
-        INCLUDE_DIRECTORIES(${gtest_SOURCE_DIR}/include)
+        IF(CMAKE_VERSION VERSION_LESS 2.8.11)
+            INCLUDE_DIRECTORIES(${gtest_SOURCE_DIR}/include)
+        ENDIF()
     ENDIF()
 ENDIF(ROBOTS_BUILD_TESTS)
 
@@ -120,6 +127,10 @@ ENDIF(CPU_ARCH)
 INCLUDE_DIRECTORIES(.)
 
 ######### targets ###########
+
+IF(ROBOTS_SKIP_DEPS)
+    find_package(absl)
+ENDIF()
 
 SET(LIBROBOTS_LIBS)
 
@@ -168,7 +179,13 @@ IF(ROBOTS_BUILD_TESTS)
     ENABLE_TESTING()
 
     ADD_EXECUTABLE(robots-test ./robots_test.cc)
-    TARGET_LINK_LIBRARIES(robots-test ${LIBROBOTS_LIBS} gtest_main)
+    IF(ROBOTS_SKIP_DEPS)
+        find_package(GTest REQUIRED)
+        TARGET_LINK_LIBRARIES(robots-test ${LIBROBOTS_LIBS} ${robots_LIBS} GTest::gtest GTest::gtest_main)
+    ELSE()
+        TARGET_LINK_LIBRARIES(robots-test ${LIBROBOTS_LIBS} gtest_main)
+    ENDIF()
+
     ADD_TEST(NAME robots-test COMMAND robots-test)
 ENDIF(ROBOTS_BUILD_TESTS)
 
