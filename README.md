@@ -71,7 +71,7 @@ Target //:robots_main up-to-date:
   bazel-bin/robots_main
 ...
 bazel-robots$ bazel run robots_main -- ~/local/path/to/robots.txt YourBot https://example.com/url
-  user-agent 'YourBot' with url 'https://example.com/url' allowed: YES
+  user-agent 'YourBot' with URI 'https://example.com/url': ALLOWED
 ```
 
 #### Building with CMake
@@ -104,8 +104,16 @@ Test project robotstxt/c-build
 Total Test time (real) =   0.02 sec
 ...
 $ robots ~/local/path/to/robots.txt YourBot https://example.com/url
-  user-agent 'YourBot' with url 'https://example.com/url' allowed: YES
+  user-agent 'YourBot' with URI 'https://example.com/url': ALLOWED
 ```
+
+> **Note**: If the robots file is empty, the parser also prints:
+>
+> ```
+> notice: robots file is empty so all user-agents are allowed
+> ```
+
+> **Exit codes:** `0` = ALLOWED, `1` = DISALLOWED
 
 ## Notes
 
