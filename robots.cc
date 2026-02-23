@@ -213,79 +213,53 @@ bool MaybeEscapePattern(const char* src, char** dst) {
 
 // Internal helper classes and functions.
 namespace {
-
-// A robots.txt has lines of key/value pairs. A ParsedRobotsKey represents
-// a key. This class can parse a text-representation (including common typos)
-// and represent them as an enumeration which allows for faster processing
-// afterwards.
-// For unparsable keys, the original string representation is kept.
-class ParsedRobotsKey {
- public:
-  enum KeyType {
-    // Generic highlevel fields.
-    USER_AGENT,
-    SITEMAP,
-
-    // Fields within a user-agent.
-    ALLOW,
-    DISALLOW,
-
-    // Unrecognized field; kept as-is. High number so that additions to the
-    // enumeration above does not change the serialization.
-    UNKNOWN = 128
-  };
-
-  ParsedRobotsKey() : type_(UNKNOWN) {}
-
-  // Disallow copying and assignment.
-  ParsedRobotsKey(const ParsedRobotsKey&) = delete;
-  ParsedRobotsKey& operator=(const ParsedRobotsKey&) = delete;
-
-  // Parse given key text and report in the is_acceptable_typo output parameter
-  // whether the key is one of the accepted typo-variants of a supported key.
-  // Does not copy the text, so the text_key must stay valid for the object's
-  // life-time or the next Parse() call.
-  void Parse(absl::string_view key, bool* is_acceptable_typo);
-
-  // Returns the type of key.
-  KeyType type() const { return type_; }
-
-  // If this is an unknown key, get the text.
-  absl::string_view GetUnknownText() const;
-
- private:
-  // The KeyIs* methods return whether a passed in key is one of the a supported
-  // keys, and report in the is_acceptable_typo output parameter whether the key
-  // is one of the accepted typo-variants of a supported key.
-  static bool KeyIsUserAgent(absl::string_view key, bool* is_acceptable_typo);
-  static bool KeyIsAllow(absl::string_view key, bool* is_acceptable_typo);
-  static bool KeyIsDisallow(absl::string_view key, bool* is_acceptable_typo);
-  static bool KeyIsSitemap(absl::string_view key, bool* is_acceptable_typo);
-
-  KeyType type_;
-  absl::string_view key_text_;
-};
-
-void EmitKeyValueToHandler(int line, const ParsedRobotsKey& key,
-                           absl::string_view value,
-                           RobotsParseHandler* handler) {
-  typedef ParsedRobotsKey Key;
-  switch (key.type()) {
-    case Key::USER_AGENT:     handler->HandleUserAgent(line, value); break;
-    case Key::ALLOW:          handler->HandleAllow(line, value); break;
-    case Key::DISALLOW:       handler->HandleDisallow(line, value); break;
-    case Key::SITEMAP:        handler->HandleSitemap(line, value); break;
-    case Key::UNKNOWN:
-      handler->HandleUnknownAction(line, key.GetUnknownText(), value);
-      break;
-      // No default case Key:: to have the compiler warn about new values.
+static bool KeyIsUserAgent(absl::string_view key, bool* is_acceptable_typo) {
+  if (kAllowFrequentTypos) {
+    *is_acceptable_typo = (absl::StartsWithIgnoreCase(key, "useragent") ||
+                           absl::StartsWithIgnoreCase(key, "user agent"));
+  } else {
+    *is_acceptable_typo = false;
   }
+  return (absl::StartsWithIgnoreCase(key, "user-agent") || *is_acceptable_typo);
+}
+
+static bool KeyIsAllow(absl::string_view key, bool* is_acceptable_typo) {
+  // We don't support typos for the "allow" key.
+  *is_acceptable_typo = false;
+  return absl::StartsWithIgnoreCase(key, "allow");
+}
+
+static bool KeyIsDisallow(absl::string_view key, bool* is_acceptable_typo) {
+  if (kAllowFrequentTypos) {
+    *is_acceptable_typo = (absl::StartsWithIgnoreCase(key, "dissallow") ||
+                           absl::StartsWithIgnoreCase(key, "dissalow") ||
+                           absl::StartsWithIgnoreCase(key, "disalow") ||
+                           absl::StartsWithIgnoreCase(key, "diasllow") ||
+                           absl::StartsWithIgnoreCase(key, "disallaw"));
+  } else {
+    *is_acceptable_typo = false;
+  }
+  return (absl::StartsWithIgnoreCase(key, "disallow") || *is_acceptable_typo);
+}
+
+static bool KeyIsSitemap(absl::string_view key, bool* is_acceptable_typo) {
+  if (kAllowFrequentTypos) {
+    *is_acceptable_typo = absl::StartsWithIgnoreCase(key, "site-map");
+  } else {
+    *is_acceptable_typo = false;
+  }
+  return absl::StartsWithIgnoreCase(key, "sitemap") || *is_acceptable_typo;
 }
 
 class RobotsTxtParser {
  public:
-  typedef ParsedRobotsKey Key;
-
+  enum class KeyType {
+    USER_AGENT = 0,
+    SITEMAP = 1,
+    ALLOW = 2,
+    DISALLOW = 3,
+    UNKNOWN = 128
+  };
   RobotsTxtParser(absl::string_view robots_body,
                   RobotsParseHandler* handler)
       : robots_body_(robots_body), handler_(handler) {
@@ -300,18 +274,41 @@ class RobotsTxtParser {
                                  RobotsParseHandler::LineMetadata* metadata);
   static void StripWhitespaceSlowly(char ** s);
 
+  static void EmitKeyValueToHandler(int line, KeyType key_type,
+                                    absl::string_view key,
+                                    absl::string_view value,
+                                    RobotsParseHandler* handler);
+
   void ParseAndEmitLine(int current_line, char* line,
                         bool* line_too_long_strict);
-  static bool NeedEscapeValueForKey(const Key& key);
+  static bool NeedEscapeValueForKey(KeyType key_type);
 
   absl::string_view robots_body_;
   RobotsParseHandler* const handler_;
 };
 
-bool RobotsTxtParser::NeedEscapeValueForKey(const Key& key) {
-  switch (key.type()) {
-    case RobotsTxtParser::Key::USER_AGENT:
-    case RobotsTxtParser::Key::SITEMAP:
+static RobotsTxtParser::KeyType GetKeyType(absl::string_view key,
+                                           bool* is_acceptable_typo) {
+  if (KeyIsUserAgent(key, is_acceptable_typo)) {
+    return RobotsTxtParser::KeyType::USER_AGENT;
+  }
+  if (KeyIsAllow(key, is_acceptable_typo)) {
+    return RobotsTxtParser::KeyType::ALLOW;
+  }
+  if (KeyIsDisallow(key, is_acceptable_typo)) {
+    return RobotsTxtParser::KeyType::DISALLOW;
+  }
+  if (KeyIsSitemap(key, is_acceptable_typo)) {
+    return RobotsTxtParser::KeyType::SITEMAP;
+  }
+  *is_acceptable_typo = false;
+  return RobotsTxtParser::KeyType::UNKNOWN;
+}
+
+bool RobotsTxtParser::NeedEscapeValueForKey(KeyType key_type) {
+  switch (key_type) {
+    case KeyType::USER_AGENT:
+    case KeyType::SITEMAP:
       return false;
     default:
       return true;
@@ -382,6 +379,29 @@ void RobotsTxtParser::GetKeyAndValueFrom(
   }
 }
 
+void RobotsTxtParser::EmitKeyValueToHandler(int line, KeyType key_type,
+                                            absl::string_view key,
+                                            absl::string_view value,
+                                            RobotsParseHandler* handler) {
+  switch (key_type) {
+    case KeyType::USER_AGENT:
+      handler->HandleUserAgent(line, value);
+      break;
+    case KeyType::ALLOW:
+      handler->HandleAllow(line, value);
+      break;
+    case KeyType::DISALLOW:
+      handler->HandleDisallow(line, value);
+      break;
+    case KeyType::SITEMAP:
+      handler->HandleSitemap(line, value);
+      break;
+    case KeyType::UNKNOWN:
+      handler->HandleUnknownAction(line, key, value);
+      break;
+  }
+}
+
 void RobotsTxtParser::ParseAndEmitLine(int current_line, char* line,
                                        bool* line_too_long_strict) {
   char* string_key;
@@ -395,15 +415,17 @@ void RobotsTxtParser::ParseAndEmitLine(int current_line, char* line,
     handler_->ReportLineMetadata(current_line, line_metadata);
     return;
   }
-  Key key;
-  key.Parse(string_key, &line_metadata.is_acceptable_typo);
-  if (NeedEscapeValueForKey(key)) {
+  absl::string_view key(string_key);
+  RobotsTxtParser::KeyType key_type =
+      GetKeyType(key, &line_metadata.is_acceptable_typo);
+
+  if (NeedEscapeValueForKey(key_type)) {
     char* escaped_value = nullptr;
     const bool is_escaped = MaybeEscapePattern(value, &escaped_value);
-    EmitKeyValueToHandler(current_line, key, escaped_value, handler_);
+    EmitKeyValueToHandler(current_line, key_type, key, escaped_value, handler_);
     if (is_escaped) delete[] escaped_value;
   } else {
-    EmitKeyValueToHandler(current_line, key, value, handler_);
+    EmitKeyValueToHandler(current_line, key_type, key, value, handler_);
   }
   // Finish adding metadata to the line.
   handler_->ReportLineMetadata(current_line, line_metadata);
@@ -688,58 +710,70 @@ void RobotsMatcher::HandleSitemap(int line_num, absl::string_view value) {}
 void RobotsMatcher::HandleUnknownAction(int line_num, absl::string_view action,
                                         absl::string_view value) {}
 
-void ParsedRobotsKey::Parse(absl::string_view key, bool* is_acceptable_typo) {
-  key_text_ = absl::string_view();
-  if (KeyIsUserAgent(key, is_acceptable_typo)) {
-    type_ = USER_AGENT;
-  } else if (KeyIsAllow(key, is_acceptable_typo)) {
-    type_ = ALLOW;
-  } else if (KeyIsDisallow(key, is_acceptable_typo)) {
-    type_ = DISALLOW;
-  } else if (KeyIsSitemap(key, is_acceptable_typo)) {
-    type_ = SITEMAP;
-  } else {
-    type_ = UNKNOWN;
-    key_text_ = key;
+// A robots.txt has lines of key/value pairs. A ParsedRobotsKey represents
+// a key. This class can parse a text-representation (including common typos)
+// and represent them as an enumeration which allows for faster processing
+// afterwards.
+// For unparsable keys, the original string representation is kept.
+class ParsedRobotsKey {
+ public:
+  using KeyType = RobotsTxtParser::KeyType;
+
+  ParsedRobotsKey() : type_(KeyType::UNKNOWN) {}
+
+  // Disallow copying and assignment.
+  ParsedRobotsKey(const ParsedRobotsKey&) = delete;
+  ParsedRobotsKey& operator=(const ParsedRobotsKey&) = delete;
+
+  // Parse given key text and report in the is_acceptable_typo output parameter
+  // whether the key is one of the accepted typo-variants of a supported key.
+  // Does not copy the text, so the key value must stay valid for the object's
+  // life-time or the next Parse() call.
+  void Parse(absl::string_view key, bool* is_acceptable_typo) {
+    key_text_ = absl::string_view();
+    type_ = GetKeyType(key, is_acceptable_typo);
+    if (type_ == KeyType::UNKNOWN) {
+      key_text_ = key;
+    }
+  }
+  // Returns the type of key.
+  KeyType type() const { return type_; }
+
+  // If this is an unknown key, get the text.
+  absl::string_view GetUnknownText() const;
+
+ private:
+  KeyType type_;
+  absl::string_view key_text_;
+};
+
+void EmitKeyValueToHandler(int line, const ParsedRobotsKey& key,
+                           absl::string_view value,
+                           RobotsParseHandler* handler) {
+  using KeyType = RobotsTxtParser::KeyType;
+  switch (key.type()) {
+    case KeyType::USER_AGENT:
+      handler->HandleUserAgent(line, value);
+      break;
+    case KeyType::ALLOW:
+      handler->HandleAllow(line, value);
+      break;
+    case KeyType::DISALLOW:
+      handler->HandleDisallow(line, value);
+      break;
+    case KeyType::SITEMAP:
+      handler->HandleSitemap(line, value);
+      break;
+    case KeyType::UNKNOWN:
+      handler->HandleUnknownAction(line, key.GetUnknownText(), value);
+      break;
+      // No default case Key:: to have the compiler warn about new values.
   }
 }
 
 absl::string_view ParsedRobotsKey::GetUnknownText() const {
-  ABSL_ASSERT(type_ == UNKNOWN && !key_text_.empty());
+  ABSL_ASSERT(type_ == KeyType::UNKNOWN && !key_text_.empty());
   return key_text_;
-}
-
-bool ParsedRobotsKey::KeyIsUserAgent(absl::string_view key,
-                                     bool* is_acceptable_typo) {
-  *is_acceptable_typo =
-      (kAllowFrequentTypos && (absl::StartsWithIgnoreCase(key, "useragent") ||
-                               absl::StartsWithIgnoreCase(key, "user agent")));
-  return (absl::StartsWithIgnoreCase(key, "user-agent") || *is_acceptable_typo);
-}
-
-bool ParsedRobotsKey::KeyIsAllow(absl::string_view key,
-                                 bool* is_acceptable_typo) {
-  // We don't support typos for the "allow" key.
-  *is_acceptable_typo = false;
-  return absl::StartsWithIgnoreCase(key, "allow");
-}
-
-bool ParsedRobotsKey::KeyIsDisallow(absl::string_view key,
-                                    bool* is_acceptable_typo) {
-  *is_acceptable_typo =
-      (kAllowFrequentTypos && ((absl::StartsWithIgnoreCase(key, "dissallow")) ||
-                               (absl::StartsWithIgnoreCase(key, "dissalow")) ||
-                               (absl::StartsWithIgnoreCase(key, "disalow")) ||
-                               (absl::StartsWithIgnoreCase(key, "diasllow")) ||
-                               (absl::StartsWithIgnoreCase(key, "disallaw"))));
-  return (absl::StartsWithIgnoreCase(key, "disallow") || *is_acceptable_typo);
-}
-
-bool ParsedRobotsKey::KeyIsSitemap(absl::string_view key,
-                                   bool* is_acceptable_typo) {
-  *is_acceptable_typo =
-      (kAllowFrequentTypos && (absl::StartsWithIgnoreCase(key, "site-map")));
-  return absl::StartsWithIgnoreCase(key, "sitemap") || *is_acceptable_typo;
 }
 
 }  // namespace googlebot
