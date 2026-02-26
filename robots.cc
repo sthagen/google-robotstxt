@@ -16,8 +16,9 @@
 // File: robots.cc
 // -----------------------------------------------------------------------------
 //
-// Implements expired internet draft
-//   http://www.robotstxt.org/norobots-rfc.txt
+// This file implements the standard defined by the Robots Exclusion Protocol
+// (REP) proposed standard.
+//   https://www.rfc-editor.org/rfc/rfc9309.html
 // with Google-specific optimizations detailed at
 //   https://developers.google.com/search/reference/robots_txt
 

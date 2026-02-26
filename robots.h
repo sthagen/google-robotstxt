@@ -17,7 +17,7 @@
 // -----------------------------------------------------------------------------
 //
 // This file implements the standard defined by the Robots Exclusion Protocol
-// (REP) internet draft (I-D).
+// (REP) proposed standard.
 //   https://www.rfc-editor.org/rfc/rfc9309.html
 //
 // Google doesn't follow the standard strictly, because there are a lot of
