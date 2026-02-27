@@ -40,6 +40,20 @@
 #include "absl/strings/string_view.h"
 
 namespace googlebot {
+
+// The type of supported keys found in robots.txt rule key-value pairs such as
+// "user-agent: examplebot" and "allow: /path".
+enum class KeyType {
+  USER_AGENT = 0,
+  SITEMAP = 1,
+  ALLOW = 2,
+  DISALLOW = 3,
+  UNKNOWN = 128
+};
+
+// Returns KeyType for a given key string, indicating if it's a typo.
+KeyType GetKeyType(absl::string_view key, bool* is_acceptable_typo);
+
 // Handler for directives found in robots.txt. These callbacks are called by
 // ParseRobotsTxt() in the sequence they have been found in the file.
 class RobotsParseHandler {
@@ -105,7 +119,9 @@ void ParseRobotsTxt(absl::string_view robots_body,
 // methods that return directly if a URL is being allowed according to the
 // robots.txt and the crawl agent.
 // The RobotsMatcher can be re-used for URLs/robots.txt but is not thread-safe.
+
 class RobotsMatchStrategy;
+
 class RobotsMatcher : protected RobotsParseHandler {
  public:
   // Create a RobotsMatcher with the default matching strategy. The default
